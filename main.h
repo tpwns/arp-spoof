@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include "ethhdr.h"
 #include <iostream>
-#include <time.h>
+#include <time.h>   
 
 
 Mac bcast = Mac("ff:ff:ff:ff:ff:ff");
@@ -49,18 +49,14 @@ void usage() {
 /* 디바이스 이름을 입력받아 맥주소를 가져오는 함수*/
 Mac GetInterfaceMacAddress(const char *ifname)
 {
-    uint8_t *mac_addr;
-    struct ifreq ifr;
-    int sockfd, ret;
+    uint8_t *mac_addr; struct ifreq ifr; int sockfd, ret;
 
-    //네트워크 인터페이스 소켓을 연다.
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if(sockfd < 0) {
         perror("sockfd");
         exit;
     }
     
-    //ioctl함수로 맥주소를 가져온다.
     strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
     ret = ioctl(sockfd, SIOCGIFHWADDR, &ifr);  
     if (ret < 0) {
@@ -77,9 +73,7 @@ Mac GetInterfaceMacAddress(const char *ifname)
 /* 디바이스 이름을 입력받아 ip주소를 가져오는 함수*/
 Ip GetInterfaceIPAddress(const char *ifname)
 {
-    char ip_addr[40];
-    struct ifreq ifr;
-    int sockfd, ret;
+    char ip_addr[40];   struct ifreq ifr;   int sockfd, ret;
 
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if(sockfd < 0) {
@@ -125,7 +119,6 @@ bool chk_ARPHdr(EthHdr *ethhdr, ArpHdr *arphdr,int op, Ip sip, Mac tmac, Ip tip)
 	if(ntohs(ethhdr->type_)!=0x0806)	return false;   //arp패킷이 아닌 경우
     if(arphdr->op()!= op || arphdr->sip_!= htonl(sip) || arphdr->tmac_ != tmac || arphdr->tip_!= htonl(tip))  
         {   
-            //printf("ARP BUT WRONG\n");
             return false;   //arp패킷이지만 정보가 일치하지 않는 경우
         }
     return true;
@@ -139,12 +132,13 @@ Mac resolve_MacAddress(pcap_t *handler, Ip resolve_ip){
     EApacket = make_EApacket(bcast,memac,1,memac,meip,unknown,resolve_ip);
 	if(pcap_sendpacket(handler, reinterpret_cast<const u_char*>(&EApacket), sizeof(EthArpPacket))!=0){
 		perror("pcap_sendpacket");
+        exit(-1);
 	}
 
     while (true) {
-		struct pcap_pkthdr* header;	//패킷 헤더를 담는 구조체
-		const u_char* packet;		//패킷 데이터를 읽어올 위치
-		int res = pcap_next_ex(handler, &header, &packet);	//pcap에서 데이터를 읽어 header에 패킷헤더를 저장하고 packet가 패킷 데이터를 가르키도록 함
+		struct pcap_pkthdr* header;	
+		const u_char* packet;		
+		int res = pcap_next_ex(handler, &header, &packet);	
 		if (res == 0) continue;	//timeout
 		if (res == PCAP_ERROR || res == PCAP_ERROR_BREAK) {	
 			perror("pcap_next_ex");
@@ -173,25 +167,6 @@ int send_arp_infection_packet(pcap_t *handler, Ip targetip, Mac sendermac, Ip se
     return 0;
 }
 
-/*패킷을 전달받아 recovring packet인지 여부를 반환하는 함수*/
-bool is_recovering(const u_char *packet, Mac sendermac, Mac targetmac, Ip targetip){
-
-	struct EthHdr *ethhdr = (struct EthHdr *) (packet);
-	struct ArpHdr *arphdr = (struct ArpHdr *)(ethhdr +1);
-
-    //1.sender가 target의 주소를 물어보는 arp request를 보내는 경우(bcast,unicast 포함)
-    if(arphdr->smac_ == sendermac && ntohs(arphdr->op_) == ArpHdr::Request && arphdr->tip_==targetip)  return true;  
-    //2.target이 broad cast로 arp request 패킷을 보내는 경우
-    if(arphdr->smac_ == targetmac && arphdr->tmac_ == bcast)  return true;  
-    
-    return false;
-
-    /*
-    3.target->sender로 unicast로 보내는 경우는 프로그램 내부에서 구현하지 않았으므로,
-    실행 시 인자 (sender,target),(target,sender) 두 flow를 모두 입력해야 한다.
-    */
-}
-
 /*send_arp_infection패킷의 스레드를 위한 함수*/
 int send_arp_infection_packet_thread(const char* dev, Ip targetip, Mac sendermac,Ip senderip, int flow) {
 	char errbuf[PCAP_ERRBUF_SIZE];
@@ -204,9 +179,24 @@ int send_arp_infection_packet_thread(const char* dev, Ip targetip, Mac sendermac
     while (true) {
         send_arp_infection_packet(handler,targetip,sendermac,senderip,flow);
         sleep(10);  //10초 마다 infection_pkt를 전송
-	}
+    }
     pcap_close(handler);
 }
+
+/*패킷을 전달받아 recovring packet인지 여부를 반환하는 함수*/
+bool is_recovering(const u_char *packet, Mac sendermac, Mac targetmac, Ip targetip){
+
+	struct EthHdr *ethhdr = (struct EthHdr *) (packet);
+	struct ArpHdr *arphdr = (struct ArpHdr *)(ethhdr +1);
+
+    //1.sender가 target의 주소를 물어보는 arp request를 보내는 경우
+    if(arphdr->smac_ == sendermac && ntohs(arphdr->op_) == ArpHdr::Request && arphdr->tip_==targetip)  return true;  
+    //2.target이 broad cast로 arp패킷을 보내는 경우
+    if(arphdr->smac_ == targetmac && arphdr->tmac_ == bcast)  return true;  
+    
+    return false;
+}
+
 
 
 

